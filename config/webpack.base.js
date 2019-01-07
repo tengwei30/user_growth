@@ -3,46 +3,73 @@ const CleanWebpackPlugin = require('clean-webpack-plugin');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const webpack = require('webpack');
 const glob = require('glob');
-var getEntry = require('./pageEntry')
+const getEntry = require('./pageEntry')
+const paths = require('./paths.js')
+const _ = require('lodash')
 
-// var pages = getEntry('./src/*/index.jsx')
-// console.log('pages', pages)
+const isProd = process.env.NODE_ENV === 'production'
+
+let watchPagePath = `./src/**/index.js`
+
+var entries = getEntry(watchPagePath)
+// 数组的每一项都是 static 文件夹下的js filename，添加后可以在所有页面中混入
+// 推荐加入一些体积较小，所有页面都需要使用的static js 文件
+var commonJS = [
+  /* 'picturefill.min.js' */
+]
+
+function resolve (dir) {
+  return path.join(__dirname, '..', dir)
+}
+
+function mergeCommonJs (entries) {
+  if (!_.isObject(entries) || _.isEmpty(commonJS)) {
+    return entries
+  }
+
+  var getCommonJsPath = function (name) {
+    if (_.isArray(name)) {
+      return _.map(name, x => resolve(`static/${name}`))
+    }
+    return resolve(`static/${name}`)
+  }
+
+  return _.mapValues(entries, x => getCommonJsPath(commonJS).concat(x))
+}
 
 const getBasePlugs = (() => {
   const baseWebPackPlugin = []
   const pages = getEntry('./src/*/index.jsx');
-  console.log(pages)
-  for(pagename in pages) {
-    console.log(pagename)
+  for(pathname in pages) {
     const pathInfo = pages[pathname]
     const folderName = pathInfo.split('/').splice(-2)[0]
     const fileName = `${folderName}.html`
-    
+    const conf = {
+      filename: isProd ? path.resolve(paths.appBuild, fileName) : fileName,
+      staticPath: staticPath,
+      template: paths.appHtml,
+      inject: true,
+      hash: false,
+      minify: isEnvProduction ? {
+        removeComments: true,
+        collapseWhitespace: true,
+        removeAttributeQuotes: true
+      } : false
+    }
+    baseWebPackPlugin.push(new HtmlWebpackPlugin(conf))
   }
-})()
+  return baseWebPackPlugin
+})
 
 
 module.exports = {
-  entry: {
-    app: './src/index.js'
-  },
+  entry: mergeCommonJs(entries),
   plugins: [
     new CleanWebpackPlugin(['dist']),
-    new HtmlWebpackPlugin({
-      filename: 'index.html',
-      template: './src/index.html',
-      hash: true,
-      minify: {
-          removeAttributeQuotes:true,
-          removeComments: true,
-          collapseWhitespace: true,
-          removeScriptTypeAttributes:true,
-          removeStyleLinkTypeAttributes:true
-      }
-    })
+    getBasePlugs()
   ],
   output: {
-    filename: '[name].[chunkhash].js',
+    filename: '[name].js',
     path: path.resolve(__dirname, 'dist')
   },
   module: {
